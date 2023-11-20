@@ -670,12 +670,26 @@ See `markdown-follow-link-at-point' and
                          (cdr match))))
     (when (remove nil result) t)))
 
-(defun obsidian--find-links-to-file (filename)
-  "Find any mention of FILENAME in the vault."
+(defun obsidian--find-markdown-links-to-file (filename)
+  "Find any mention of FILENAME in the vault as a markdown link."
+  (->> (file-name-sans-extension filename)
+       (s-replace " " "%20")
+       obsidian--grep
+       (-filter (lambda (x) (obsidian--mention-link-to-p (s-replace " " "%20" (file-name-sans-extension filename)) x)))
+       (-map #'car)))
+
+(defun obsidian--find-wiki-links-to-file (filename)
+  "Find any mention of FILENAME in the vault as a wiki link."
   (->> (file-name-sans-extension filename)
        obsidian--grep
        (-filter (lambda (x) (obsidian--mention-link-to-p (file-name-sans-extension filename) x)))
        (-map #'car)))
+
+(defun obsidian--find-links-to-file (filename)
+  "Find any mention of FILENAME in the vault."
+  (delete-dups
+   (append (obsidian--find-markdown-links-to-file filename)
+           (obsidian--find-wiki-links-to-file filename))))
 
 (defun obsidian--completing-read-for-matches (coll)
   "Take a COLL of matches produced by elgrep and make a list for completing read."

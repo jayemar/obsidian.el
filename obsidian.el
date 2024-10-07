@@ -35,17 +35,17 @@
 ;; app for syncing and doing more specialized stuff, like viewing notes graphs.
 
 ;;; Code:
-
 (require 'f)
 (require 'dash)
 (require 's)
+
 (require 'ht)
-;; TODO: What are we using this package for?
 (require 'cl-lib)
 
 (require 'markdown-mode)
-(require 'yaml)
+
 (require 'elgrep)
+(require 'yaml)
 
 (require 'obsidian-ext)
 
@@ -62,7 +62,6 @@
 
 (defgroup obsidian nil "Obsidian Notes group." :group 'text)
 
-;; TODO: It would be good to be able to specify directories to ignore
 (defcustom obsidian-directory nil
   "Path to Obsidian Notes vault."
   :type 'directory)
@@ -72,7 +71,7 @@
   :type 'directory)
 
 (defcustom obsidian-links-use-vault-path nil
-  "If true, use the full vault path for a link instead of just the filename."
+  "If true, the full vault path for a link will be used instead of just the filename."
   :type 'boolean)
 
 (defcustom obsidian-include-hidden-files t
@@ -85,10 +84,8 @@
 If it is true, create in inbox, otherwise next to the current buffer."
   :type 'boolean)
 
-(defcustom obsidian-daily-notes-directory obsidian-inbox-directory
-  "Subdir to create daily notes with `obsidian-daily-note'.
-
-Default is the inbox directory"
+(defcustom obsidian-daily-notes-directory obsidian-inbox-directory 
+  "Subdir to create daily notes with `obsidian-daily-note'. Default: the inbox directory"
   :type 'directory)
 
 (defcustom obsidian-templates-directory nil
@@ -117,8 +114,7 @@ If it is true, a timer will be created using the values of
 
 (eval-when-compile (defvar local-minor-modes))
 
-(defun obsidian--directory-files-pre28
-  (orig-func dir &optional full match nosort ignored)
+(defun obsidian--directory-files-pre28 (orig-func dir &optional full match nosort ignored)
   "Version of `directory-files' compatible with Emacs versions < 28.
 
 ORIG-FUNC is the original `directory-files' function that is going to be
@@ -183,15 +179,20 @@ Each link list contains the following as returned by markdown-link-at-pos:
   5. title text
   6. bang (nil or \"!\")")
 
-(defvar obsidian--tags-map "Hash table with tags as keys and list of files as values.")
+(defvar obsidian--tags-map nil
+  "Hash table with tags as keys and list of files as values.
+Only used as an intermediate variable in functions.")
 
-(defvar obsidian--file-metadata nil "Hash table with file metadata (tags, aliases, links.")
+(defvar obsidian--file-metadata nil
+  "Hash table with file metadata (tags, aliases, links.
+Only used as an intermediate variable in functions.")
 
 (defvar obsidian--aliases-map (make-hash-table :test 'equal) "Hash table of all Obsidian aliases.")
 
 (defvar obsidian--backlinks-alist (make-hash-table :test 'equal) "Alist of backlinks.")
 
 (defvar obsidian--update-timer nil "Timer to periodically update the cache.")
+
 ;; TODO: We can use this to check to see if any files are newer than this
 ;;       and may therefore need to be updated
 (defvar obsidian--updated-time nil "Timer when the last update occurred.")
@@ -288,8 +289,7 @@ The function is taken from xahlee:
   "Return t if FILE is not in .obsidian dir of Obsidian."
   (not (s-contains-p "/.obsidian" file)))
 
-;; Previously: obsidian-file-p
-(defun obsidian--file-p (&optional file)
+(defun obsidian-file-p (&optional file)
   "Return t if FILE is an obsidian.el file, nil otherwise.
 
 If FILE is not specified, use the current buffer's file-path.
@@ -299,23 +299,14 @@ FILE is an Org-roam file if:
 - Is not a dot file or, if `obsidian-include-hidden-files' is t, then:
   - It is not in .trash
   - It is not an Emacs temp file"
-
-  (-when-let* (;; (_ (print (format "NOT True for %s" file)))
-               (path (or file (buffer-file-name (buffer-base-buffer))))
-               ;; TODO: This won't work if hidden files is true
+  (-when-let* ((path (or file (buffer-file-name (buffer-base-buffer))))
+               ;; TODO: Will this work if `include-hidden-files' is true?
                (md-ext (s-ends-with-p ".md" path))
                (not-dot-file (or obsidian-include-hidden-files
                                  (not (obsidian--dot-file-p path))))
                (_ (not (string-match-p (rx (or "node_modules" ".git")) path)))
                (not-trash-p (obsidian--not-trash-p path))
-               (not-dot-obsidian (obsidian--not-dot-obsidian-p path))
-               ;; (relative-path (file-relative-name path obsidian-directory))
-               ;; (not-temp-p (not (s-contains-p "~" relative-path)))
-
-               ;; I think (untested) that s-ends-with-p is much faster than s-contians-p
-               ;; But this should also be unnecessary because of the md-ext line
-               ;; (not-temp-p (not (s-ends-with-p "~" path)))
-               )
+               (not-dot-obsidian (obsidian--not-dot-obsidian-p path)))
     t))
 
 (defun obsidian--file-relative-name (f)
@@ -381,7 +372,6 @@ markdown-link-at-pos:
         ;; TODO: Using a hashmap means we can only have a single link to
         ;;       a file within a different file. Is that okay?
         (puthash (nth 3 link-info) link-info dict)))
-    ;; (message (format "Found %d links" (length (hash-table-keys dict))))
     dict))
 
 (defun obsidian--find-yaml-front-matter-in-string (s)
@@ -479,15 +469,15 @@ allows completion with both lower and upper case versions of the tags."
          -distinct)))
 
 (defun obsidian-enable-minor-mode ()
-  "Check if current buffer is an `obsidian--file-p' and toggle `obsidian-mode'."
+  "Check if current buffer is an `obsidian-file-p' and toggle `obsidian-mode'."
   (and (derived-mode-p 'markdown-mode)
-       (obsidian--file-p)
+       (obsidian-file-p)
        (obsidian-mode t)))
 
 (defun obsidian--find-all-files()
   "Return a list of all obsidian files in the vault."
   (let ((all-files (directory-files-recursively obsidian-directory "\.*$")))
-    (-filter #'obsidian--file-p all-files)))
+    (-filter #'obsidian-file-p all-files)))
 
 (defun obsidian-clear-cache ()
   "Clears the obsidian.el cache.
@@ -525,13 +515,6 @@ If you need to run this manually, please report this as an issue on Github."
       (seq-map #'obsidian--remove-file old-files)
       (if obsidian--debug-messages
           (message "Obsidian cache updated at %s" (format-time-string "%H:%M:%S"))))))
-
-(defun obsidian-update-async ()
-  "Asyncrhonous version of obsidian-update."
-  (interactive)
-  (async-start
-   (lambda () (function obsidian-update))
-   (lambda (_) (message "Obsidian cache asynchronously updated"))))
 
 (defun obsidian--format-link (file-path &optional toggle)
   "Format link from FILE-PATH based on `obsidian-links-use-vault-path'.
@@ -636,12 +619,10 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
                  obsidian-daily-note-template))
       (save-buffer))))
 
-;; TODO: allow links to subsections of a note like we have with backlinks
 ;;;###autoload
 (defun obsidian-jump ()
   "Jump to Obsidian note."
   (interactive)
-  ;; (obsidian-update)
   (let* ((files (obsidian-files))
          (dict (make-hash-table :test 'equal))
          (_ (-map (lambda (f)
@@ -679,7 +660,7 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
 ;; TODO: after-change-functions hook(s) ?
 (defun obsidian--update-on-save ()
   "Used as a hook to update the vault cache when a file is saved."
-  (when (obsidian--file-p (buffer-file-name))
+  (when (obsidian-file-p (buffer-file-name))
     (obsidian--add-file (buffer-file-name))))
 
 (defun obsidian--vault-directories ()
@@ -694,7 +675,7 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
 (defun obsidian-move-file ()
   "Move current note to another directory."
   (interactive)
-  (when (not (obsidian--file-p (buffer-file-name)))
+  (when (not (obsidian-file-p (buffer-file-name)))
     (user-error "Current file is not an obsidian-file"))
   (let* ((old-file-path (buffer-file-name))
          (dict (obsidian--vault-directories))
@@ -742,7 +723,6 @@ If the file include directories in its path, we create the file relative to
 If ARG is set, the file will be opened in other window."
   (let* ((all-files (->> (obsidian-files) (-map #'obsidian--file-relative-name)))
          (matches (obsidian--match-files f all-files))
-         ;; TODO: Could we use the built-in 'cond' for this?
          (file (cl-case (length matches)
                  (0 (obsidian--prepare-new-file-from-rel-path (obsidian--maybe-in-same-dir f)))
                  (1 (car matches))
@@ -752,7 +732,6 @@ If ARG is set, the file will be opened in other window."
          (path (obsidian--expand-file-name file)))
     (if arg (find-file-other-window path) (find-file path))))
 
-;; TODO: Update users of this function to use point P
 (defun obsidian-find-point-in-file (f p &optional arg)
   "Open file F at point P, offering a choice if multiple files match F.
 
@@ -768,8 +747,7 @@ If ARG is set, the file will be opened in other window."
         f
       (concat (file-relative-name (file-name-directory (buffer-file-name)) obsidian-directory) "/" f))))
 
-;; TODO: We're not using this fn anymore, but need to update tests... yes we are...?
-(defun obsidian--wiki-link-p ()
+(defun obsidian-wiki-link-p ()
   "Return non-nil if `point' is at a true wiki link.
 A true wiki link name matches `markdown-regex-wiki-link' but does
 not match the current file name after conversion.  This modifies
@@ -796,7 +774,6 @@ From 'filename#section' keep only the 'filename'."
 (defun obsidian-follow-wiki-link-at-point (&optional arg)
   "Find Wiki Link at point. Opens wiki links in other window if ARG is non-nil."
   (interactive "P")
-  ;; (obsidian--wiki-link-p)
   (thing-at-point-looking-at markdown-regex-wiki-link)
   (let* ((url (->> (match-string-no-properties 3)
                    s-trim)))
@@ -844,10 +821,8 @@ See `markdown-follow-link-at-point' and
   (interactive "P")
   (cond ((markdown-link-p)
          (obsidian-follow-markdown-link-at-point arg))
-        ((obsidian--wiki-link-p)
-         (obsidian-follow-wiki-link-at-point arg))
-        ((obsidian--backlink-p)
-         (obsidian-follow-backlink-at-point))))
+        ((obsidian-wiki-link-p)
+         (obsidian-follow-wiki-link-at-point arg))))
 
 (defun obsidian--grep (re)
   "Find RE in the Obsidian vault."
@@ -866,9 +841,6 @@ See `markdown-follow-link-at-point' and
 ;; TODO: Search for filename only as well as filename with relative subdir(s)
 (defun obsidian-file-links (filename)
   "FILENAME is the base and extension without directories.
-
-TODO: Fix this docstring
-or relative to the Obsidian vault directory...?
 
 host - host file; the one that includes the link.  full path filename
 targ - target file; file being pointed to by the host link.  name and extension only
@@ -914,7 +886,6 @@ Template vars: {{title}}, {{date}}, and {{time}}"
 
 (defun obsidian--backlinks-completion-fn (hmap)
   "Completion function to show file path and link text from HMAP."
-  ;; TODO: Replace this ht-map call as it's the only use of the ht package
   (let* ((obsidian--backlinks-alist
           (ht-map (lambda (k v)
                     (cons (obsidian--file-relative-name k) (nth 2 v)))
@@ -950,8 +921,6 @@ Template vars: {{title}}, {{date}}, and {{time}}"
           (goto-char (car link-info)))
       (message "No backlinks found."))))
 
-;; TODO: Could we provide a preview of the surrounding matched string?
-;; TODO: Could maybe jump right to search?
 ;;;###autoload
 (defun obsidian-search ()
   "Search Obsidian vault for input."
@@ -962,9 +931,8 @@ Template vars: {{title}}, {{date}}, and {{time}}"
     (let* ((choice (completing-read "Select file: " results)))
       (obsidian-find-point-in-file choice 0))))
 
-;; TODO: Could jump right to tag if we track the points
 ;;;###autoload
-(defun obsidian-find-tag ()
+(defun obsidian-tag-find ()
   "Find all notes with a tag."
   (interactive)
   (let* ((taghash (obsidian-tags-ht))
@@ -974,7 +942,6 @@ Template vars: {{title}}, {{date}}, and {{time}}"
          (choice (completing-read "Select file: " results)))
     (obsidian-find-point-in-file choice 0)))
 
-;; TODO: Make sure that all of these hydra commands work well
 (when (eval-when-compile (require 'hydra nil t))
   (defhydra obsidian-hydra (:hint nil)
     "
@@ -991,7 +958,7 @@ _s_earch by expr.   _u_pdate tags/alises etc.
     ("l" obsidian-insert-link :color blue)
     ("q" nil :color blue)
     ("s" obsidian-search)
-    ("t" obsidian-find-tag)
+    ("t" obsidian-tag-find)
     ("u" obsidian-update)
     ("w" obsidian-insert-wikilink :color blue)))
 
@@ -1000,10 +967,6 @@ _s_earch by expr.   _u_pdate tags/alises etc.
 
 (add-hook 'after-save-hook #'obsidian--update-on-save)
 
-;; TODO: alternatives to polling:
-;;       - how does lsp track files?
-;;       - what triggers treemacs to update?
-;;         - search treemacs code for "add-hook-"
 (defun obsidian-idle-timer ()
   "Wait until Emacs is idle to call update."
   (if obsidian--debug-messages

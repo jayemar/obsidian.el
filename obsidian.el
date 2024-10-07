@@ -47,8 +47,6 @@
 (require 'elgrep)
 (require 'yaml)
 
-(require 'obsidian-ext)
-
 ;; Inspired by RamdaJS's tap function
 (defun obsidian-tap (a f)
   "Evaluate (F A) for its side-effects but return A."

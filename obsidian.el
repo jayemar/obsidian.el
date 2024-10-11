@@ -153,8 +153,25 @@ the mode, `toggle' toggles the state."
 
 (defvar obsidian--debug-messages nil)
 
-;; TOOD: This doesn't produce the same tag rules as Obsidian Notes
-(defvar obsidian--tag-regex "#[[:alnum:]-_/+]+" "Regex pattern used to find tags in Obsidian files.")
+(defvar obsidian--tag-regex
+  "\\(?:\\`\\|[[:space:]]\\)\\#\\(?:[A-Za-z_/][-A-Za-z0-9_/]*[A-Za-z_/][-A-Za-z0-9_/]*\\)"
+  "Regex pattern used to find tags in Obsidian files.
+
+Here's a breakdown of the pattern:
+
+- `\\(?:\\`\\|[[:space:]]\\)`: Matches the beginning of the document (`\\``) or any
+whitespace character (`[[:space:]]`). This ensures that the tag either starts at the
+beginning of the document or is preceded by a whitespace character.
+
+- `\\(#`: Matches the starting hashtag of the tag and begins a capturing group for the tag itself.
+
+- `\\(?:[A-Za-z_/][-A-Za-z0-9_/]*[A-Za-z_/][-A-Za-z0-9_/]*\\)`: This ensures that
+the tag has at least one non-numerical character (A-Z) and allows the use of letters,
+numbers, underscores, hyphens, and forward slashes. The first and last
+segments (`[A-Za-z_/]`) ensure that the tag contains at least one non-numeric
+character outside the start and end. Numbers will not be allowed as the only characters of a tag.
+
+- `[#)]`: Ends the capturing group for the whole tag that starts with a `#`. ")
 
 (defvar obsidian--basic-wikilink-regex "\\[\\[[[:graph:][:blank:]]*\\]\\]"
   "Regex pattern used to find wikilinks.")
@@ -327,13 +344,37 @@ FILE is an Org-roam file if:
   (->> (directory-files-recursively obsidian-directory "" t)
        (-filter #'obsidian--user-directory-p)))
 
+(defun obsidian--process-front-matter-tags (front-matter)
+  "FRONT-MATTER is the hashmap returned by obsidian--find-yaml-front-matter-in-string.
+
+This function filters invalid tags (eg tags that are not in a list, or tags that
+already have hashtags as these are not allowed in front matter, or values of :null
+as may be returned by the YAML parser), trims whitespace, and concatenates a hashtag
+to the beginning of each valid tag.
+A list of valid tags is returned."
+  (when front-matter
+    (let* ((tags (gethash 'tags front-matter)))
+      ;; tags in front matter should be specified as a list
+      (when (and tags (not (equal 'string (type-of tags))))
+        (if (equal tags :null)
+            nil
+          (seq-map (lambda (tag) (format "#%s" tag))
+                   (->> tags
+                        ;; spaces are not allowed in tags; use commas between tags
+                        (seq-remove (lambda (tag) (s-contains-p " " tag)))
+                        ;; tags in front matter shouldn't start with a hashtag
+                        (seq-remove (lambda (tag) (s-starts-with-p "#" tag))))))))))
+
 (defun obsidian--find-tags-in-string (s)
-  "Retrieve list of #tags from string S."
+  "Retrieve list of #tags from string S.
+
+First searches for front matter to find tags there, then searches through
+the entire string."
   (let* ((front-matter (obsidian--find-yaml-front-matter-in-string s))
-         (add-tag-fn (lambda (tag) (concat "#" tag))))
-    (->> (s-match-strings-all obsidian--tag-regex s)
-         (append (and front-matter (mapcar add-tag-fn (gethash 'tags front-matter))))
-         -flatten)))
+         (fm-tags (obsidian--process-front-matter-tags front-matter))
+         (body-tags-raw (-flatten (s-match-strings-all obsidian--tag-regex s)))
+         (body-tags (seq-map #'string-trim-left body-tags-raw)))
+    (-flatten (append fm-tags body-tags))))
 
 (defun obsidian--find-aliases-in-string (s)
   "Retrieve list of aliases from string S."
@@ -374,9 +415,11 @@ markdown-link-at-pos:
       (let* ((split (s-split-up-to "---" s 2))
              (looks-like-yaml-p (eq (length split) 3)))
         (if looks-like-yaml-p
-            (->> split
-                 (nth 1)
-                 yaml-parse-string)))))
+            (condition-case nil
+                (yaml-parse-string (nth 1 split))
+              (error
+               (message "Warning: erorr parsing YAML front matter")
+               nil))))))
 
 (defun obsidian-tags-ht ()
   "Hashtable with each tags as the keys and list of file path as the values."

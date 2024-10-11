@@ -71,7 +71,9 @@
   (after-all (obsidian-specify-path obsidian--test--original-dir))
 
   (it "find tags in string"
-    (expect (length (obsidian--find-tags-in-string "#foo bar #spam #bar-spam #spam_bar #foo+spam #foo=bar not tags")) :to-equal 6)))
+    (expect (length (obsidian--find-tags-in-string
+                     "#foo bar #spam #bar-spam #spam_bar #foo+spam #foo=bar not tags #123 #+invalidtag"))
+            :to-equal 6)))
 
 (describe "obsidian-list-visible-tags"
   (before-all (progn
